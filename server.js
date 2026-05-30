@@ -8,48 +8,9 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
-const SMTP_OPTS = [
-  // Estrategia 1: Puerto 465 directo
-  {
-    host: 'mail.cristaleriasantosglasses.com',
-    port: 465,
-    secure: true,
-    auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
-    tls: { rejectUnauthorized: false },
-    connectionTimeout: 15000
-  },
-  // Estrategia 2: Puerto 587 STARTTLS
-  {
-    host: 'mail.cristaleriasantosglasses.com',
-    port: 587,
-    secure: false,
-    auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
-    tls: { rejectUnauthorized: false },
-    connectionTimeout: 15000
-  },
-  // Estrategia 3: IP directa puerto 465
-  {
-    host: '34.175.37.245',
-    port: 465,
-    secure: true,
-    auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
-    tls: { rejectUnauthorized: false, servername: 'mail.cristaleriasantosglasses.com' },
-    connectionTimeout: 15000
-  }
-];
-
-let transportIndex = 0;
-
-function getTransporter() {
-  // Rotamos entre estrategias para tolerancia a fallos
-  const opts = SMTP_OPTS[transportIndex % SMTP_OPTS.length];
-  transportIndex++;
-  console.log(`📧 Intentando SMTP [${opts.host}:${opts.port}]...`);
-  return nodemailer.createTransport(opts);
-}
-
 console.log('✅ Servidor listo');
 
+// ENDPOINT: Recibir firma - responde INMEDIATAMENTE
 app.post('/api/firmar', async (req, res) => {
   try {
     const { presupuesto, cliente, email, telefono, codigo, firmaImg, fecha } = req.body;
@@ -63,7 +24,7 @@ app.post('/api/firmar', async (req, res) => {
     // Responder AL INSTANTE
     res.json({ success: true, message: 'Firma recibida' });
     
-    // Enviar emails en segundo plano
+    // Enviar emails en segundo plano con INTENTOS MULTIPLES
     setImmediate(() => enviarEmails(presupuesto, cliente, email, telefono, codigo, firmaImg, fecha));
   } catch(e) {
     console.log('❌ Error en /firmar:', e.message);
@@ -73,40 +34,69 @@ app.post('/api/firmar', async (req, res) => {
   }
 });
 
+// FUNCION DE ENVIO CON 3 ESTRATEGIAS SMTP
 async function enviarEmails(presupuesto, cliente, email, telefono, codigo, firmaImg, fecha) {
-  // Intentar hasta 3 estrategias SMTP diferentes
-  for (let intento = 0; intento < 3; intento++) {
+  const configs = [
+    // Estrategia 1: Puerto 465 directo al hosting
+    {
+      host: 'mail.cristaleriasantosglasses.com',
+      port: 465,
+      secure: true,
+      auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 20000
+    },
+    // Estrategia 2: Puerto 587 STARTTLS
+    {
+      host: 'mail.cristaleriasantosglasses.com',
+      port: 587,
+      secure: false,
+      auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 20000
+    },
+    // Estrategia 3: IP directa del SMTP
+    {
+      host: '34.175.37.245',
+      port: 465,
+      secure: true,
+      auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
+      tls: { rejectUnauthorized: false, servername: 'mail.cristaleriasantosglasses.com' },
+      connectionTimeout: 20000
+    }
+  ];
+
+  const adminMail = {
+    from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>',
+    to: 'admin@cristaleriasantosglasses.com',
+    subject: `✅ FIRMADO: ${presupuesto} - ${cliente}`,
+    html: buildAdminHtml(presupuesto, cliente, email, telefono, codigo, firmaImg, fecha)
+  };
+
+  const clienteMail = email ? {
+    from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>',
+    to: email,
+    subject: `✅ ${presupuesto} - Confirmacion de firma - Santos Glasses`,
+    html: buildClienteHtml(presupuesto, cliente, codigo, fecha)
+  } : null;
+
+  for (let i = 0; i < configs.length; i++) {
     try {
-      const mailer = getTransporter();
+      const cfg = configs[i];
+      console.log(`📧 Intento ${i+1}: ${cfg.host}:${cfg.port}...`);
       
-      const adminMail = {
-        from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>',
-        to: 'admin@cristaleriasantosglasses.com',
-        subject: `✅ FIRMADO: ${presupuesto} - ${cliente}`,
-        html: buildAdminHtml(presupuesto, cliente, email, telefono, codigo, firmaImg, fecha)
-      };
-
-      const tasks = [mailer.sendMail(adminMail)];
-      if (email) {
-        const clienteMail = {
-          from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>',
-          to: email,
-          subject: `✅ ${presupuesto} - Confirmacion de firma - Santos Glasses`,
-          html: buildClienteHtml(presupuesto, cliente, codigo, fecha)
-        };
-        tasks.push(mailer.sendMail(clienteMail));
-      }
-
+      const transporter = nodemailer.createTransport(cfg);
+      const tasks = [transporter.sendMail(adminMail)];
+      if (clienteMail) tasks.push(transporter.sendMail(clienteMail));
+      
       await Promise.all(tasks);
-      console.log(`✅ Correos enviados: ${presupuesto} [intento ${intento + 1}]`);
-      return; // Éxito, salimos
+      console.log(`✅ Correos enviados: ${presupuesto} (intento ${i+1})`);
+      return; // exito
     } catch(e) {
-      console.log(`⚠️ Intento ${intento + 1} falló: ${e.message}`);
-      if (intento === 2) {
-        console.log(`❌ Todos los intentos SMTP fallaron para ${presupuesto}`);
-      }
+      console.log(`⚠️ Intento ${i+1} fallo: ${e.message.substring(0,200)}`);
     }
   }
+  console.log(`❌ Todos los intentos SMTP fallaron para ${presupuesto}`);
 }
 
 function buildAdminHtml(presupuesto, cliente, email, telefono, codigo, firmaImg, fecha) {
@@ -145,9 +135,7 @@ function buildClienteHtml(presupuesto, cliente, codigo, fecha) {
       </div>
       <div style="border:1px solid #ddd;padding:20px;">
         <h3 style="color:#1a5276;">✅ Presupuesto aceptado correctamente</h3>
-        <p style="font-size:14px;color:#555;line-height:1.5;">
-          Gracias por confiar en <strong>Santos Glasses</strong>.
-        </p>
+        <p style="font-size:14px;color:#555;line-height:1.5;">Gracias por confiar en <strong>Santos Glasses</strong>.</p>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
           <tr><td style="padding:6px 0;font-weight:bold;">Presupuesto:</td><td>${presupuesto}</td></tr>
           <tr><td style="padding:6px 0;font-weight:bold;">Cliente:</td><td>${cliente}</td></tr>
