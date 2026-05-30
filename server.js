@@ -20,12 +20,8 @@ const transporter = nodemailer.createTransport({
   tls: { rejectUnauthorized: false }
 });
 
-// Verify SMTP on startup
-transporter.verify().then(() => {
-  console.log('✅ SMTP connected');
-}).catch(e => {
-  console.log('⚠️ SMTP error:', e.message);
-});
+// No verificamos SMTP en startup (evita timeouts en Render)
+console.log('✅ Servidor listo, SMTP conectara bajo demanda');
 
 // ENDPOINT: Recibir firma + enviar correos
 app.post('/api/firmar', async (req, res) => {
