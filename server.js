@@ -8,28 +8,48 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Config SMTP con conexión lazy (no verifica nada al inicio)
-let transporter = null;
+const SMTP_OPTS = [
+  // Estrategia 1: Puerto 465 directo
+  {
+    host: 'mail.cristaleriasantosglasses.com',
+    port: 465,
+    secure: true,
+    auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 15000
+  },
+  // Estrategia 2: Puerto 587 STARTTLS
+  {
+    host: 'mail.cristaleriasantosglasses.com',
+    port: 587,
+    secure: false,
+    auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 15000
+  },
+  // Estrategia 3: IP directa puerto 465
+  {
+    host: '34.175.37.245',
+    port: 465,
+    secure: true,
+    auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
+    tls: { rejectUnauthorized: false, servername: 'mail.cristaleriasantosglasses.com' },
+    connectionTimeout: 15000
+  }
+];
+
+let transportIndex = 0;
 
 function getTransporter() {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: 'mail.cristaleriasantosglasses.com',
-      port: 465,
-      secure: true,
-      auth: {
-        user: 'admin@cristaleriasantosglasses.com',
-        pass: '1@j?@%177@G1'
-      },
-      tls: { rejectUnauthorized: false }
-    });
-  }
-  return transporter;
+  // Rotamos entre estrategias para tolerancia a fallos
+  const opts = SMTP_OPTS[transportIndex % SMTP_OPTS.length];
+  transportIndex++;
+  console.log(`📧 Intentando SMTP [${opts.host}:${opts.port}]...`);
+  return nodemailer.createTransport(opts);
 }
 
-console.log('✅ Servidor listo (SMTP lazy)');
+console.log('✅ Servidor listo');
 
-// ENDPOINT: Recibir firma - responde INMEDIATAMENTE
 app.post('/api/firmar', async (req, res) => {
   try {
     const { presupuesto, cliente, email, telefono, codigo, firmaImg, fecha } = req.body;
@@ -54,31 +74,38 @@ app.post('/api/firmar', async (req, res) => {
 });
 
 async function enviarEmails(presupuesto, cliente, email, telefono, codigo, firmaImg, fecha) {
-  try {
-    const mailer = getTransporter();
-    
-    const adminMail = {
-      from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>',
-      to: 'admin@cristaleriasantosglasses.com',
-      subject: `✅ FIRMADO: ${presupuesto} - ${cliente}`,
-      html: buildAdminHtml(presupuesto, cliente, email, telefono, codigo, firmaImg, fecha)
-    };
-
-    const tasks = [mailer.sendMail(adminMail)];
-    if (email) {
-      const clienteMail = {
+  // Intentar hasta 3 estrategias SMTP diferentes
+  for (let intento = 0; intento < 3; intento++) {
+    try {
+      const mailer = getTransporter();
+      
+      const adminMail = {
         from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>',
-        to: email,
-        subject: `✅ ${presupuesto} - Confirmacion de firma - Santos Glasses`,
-        html: buildClienteHtml(presupuesto, cliente, codigo, fecha)
+        to: 'admin@cristaleriasantosglasses.com',
+        subject: `✅ FIRMADO: ${presupuesto} - ${cliente}`,
+        html: buildAdminHtml(presupuesto, cliente, email, telefono, codigo, firmaImg, fecha)
       };
-      tasks.push(mailer.sendMail(clienteMail));
-    }
 
-    await Promise.all(tasks);
-    console.log(`✅ Correos enviados: ${presupuesto}`);
-  } catch(e) {
-    console.log('❌ Error correos:', e.message);
+      const tasks = [mailer.sendMail(adminMail)];
+      if (email) {
+        const clienteMail = {
+          from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>',
+          to: email,
+          subject: `✅ ${presupuesto} - Confirmacion de firma - Santos Glasses`,
+          html: buildClienteHtml(presupuesto, cliente, codigo, fecha)
+        };
+        tasks.push(mailer.sendMail(clienteMail));
+      }
+
+      await Promise.all(tasks);
+      console.log(`✅ Correos enviados: ${presupuesto} [intento ${intento + 1}]`);
+      return; // Éxito, salimos
+    } catch(e) {
+      console.log(`⚠️ Intento ${intento + 1} falló: ${e.message}`);
+      if (intento === 2) {
+        console.log(`❌ Todos los intentos SMTP fallaron para ${presupuesto}`);
+      }
+    }
   }
 }
 
@@ -134,7 +161,6 @@ function buildClienteHtml(presupuesto, cliente, codigo, fecha) {
   `;
 }
 
-// Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
