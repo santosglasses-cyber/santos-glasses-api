@@ -63,9 +63,9 @@ app.post('/api/firmar', async (req, res) => {
               <img src="${firmaImg}" style="max-width:250px;border:1px solid #ccc;border-radius:4px;">
             </div>` : ''}
             <p style="margin-top:15px;">
-              <a href="https://santosglasses-cyber.github.io/presupuestos/${presupuesto}.pdf" 
+              <a href="https://santosglasses-cyber.github.io/presupuestos/" 
                  style="display:inline-block;padding:10px 20px;background:#008c78;color:white;text-decoration:none;border-radius:6px;">
-                📄 Ver PDF
+                📄 Ver presupuesto online
               </a>
             </p>
           </div>
