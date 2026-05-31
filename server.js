@@ -118,27 +118,33 @@ app.post('/api/actualizar-cliente', async (req, res) => {
         r.end();
       } catch(e) { console.log('Telegram notify error:', e.message); }
     });
-    // Enviar email a admin con los cambios
-    setImmediate(() => {
-      try {
-        const t = nodemailer.createTransport({
-          host: 'mail.cristaleriasantosglasses.com',
-          port: 465,
-          secure: true,
-          auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
-          tls: { rejectUnauthorized: false },
-          connectionTimeout: 15000
-        });
-        var html = '<div style="font-family:Arial;max-width:600px;margin:auto;"><div style="background:#008c78;padding:15px;text-align:center;"><h2 style="color:white;margin:0;">SANTOS GLASSES</h2></div><div style="border:1px solid #ddd;padding:20px;"><h3 style="color:#cc6600;">✏️ DATOS DE CLIENTE ACTUALIZADOS</h3>';
-        html += '<table style="width:100%;font-size:13px;"><tr><td style="font-weight:bold;padding:4px;">Presupuesto:</td><td>'+esc(data.presupuesto)+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Nombre:</td><td>'+esc(data.nombre)+'</td></tr><tr><td style="font-weight:bold;padding:4px;">CIF/NIF:</td><td>'+esc(data.cif||'-')+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Dirección:</td><td>'+esc(data.direccion||'-')+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Teléfono:</td><td>'+esc(data.telefono||'-')+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Email:</td><td>'+esc(data.email||'-')+'</td></tr></table>';
-        html += '<p><a href="https://santosglasses-cyber.github.io/presupuestos/'+esc(data.presupuesto)+'.html" style="padding:10px 20px;background:#008c78;color:white;text-decoration:none;">Ver presupuesto</a></p></div></div>';
-        t.sendMail({
-          from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>',
-          to: 'admin@cristaleriasantosglasses.com',
-          subject: '✏️ ACTUALIZAR CLIENTE: ' + data.presupuesto + ' - ' + data.nombre,
-          html: html
-        }).then(function(){console.log('Email actualización enviado');}).catch(function(e){console.log('Error email actualización:', e.message);});
-      } catch(e) { console.log('Error envío email actualización:', e.message); }
+    // Enviar email a admin con los cambios (3 estrategias)
+    setImmediate(async () => {
+      var html = '<div style="font-family:Arial;max-width:600px;margin:auto;"><div style="background:#008c78;padding:15px;text-align:center;"><h2 style="color:white;margin:0;">SANTOS GLASSES</h2></div><div style="border:1px solid #ddd;padding:20px;"><h3 style="color:#cc6600;">✏️ DATOS DE CLIENTE ACTUALIZADOS</h3>';
+      html += '<table style="width:100%;font-size:13px;"><tr><td style="font-weight:bold;padding:4px;">Presupuesto:</td><td>'+esc(data.presupuesto)+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Nombre:</td><td>'+esc(data.nombre)+'</td></tr><tr><td style="font-weight:bold;padding:4px;">CIF/NIF:</td><td>'+esc(data.cif||'-')+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Dirección:</td><td>'+esc(data.direccion||'-')+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Localidad:</td><td>'+esc(data.localidad||'-')+'</td></tr><tr><td style="font-weight:bold;padding:4px;">C.P.:</td><td>'+esc(data.cp||'-')+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Provincia:</td><td>'+esc(data.provincia||'-')+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Teléfono:</td><td>'+esc(data.telefono||'-')+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Email:</td><td>'+esc(data.email||'-')+'</td></tr></table>';
+      html += '<p><a href="https://santosglasses-cyber.github.io/presupuestos/'+esc(data.presupuesto)+'.html" style="padding:10px 20px;background:#008c78;color:white;text-decoration:none;">Ver presupuesto</a></p></div></div>';
+      var subject = '✏️ ACTUALIZAR CLIENTE: ' + data.presupuesto + ' - ' + data.nombre;
+      var mailOpts = { from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>', to: 'admin@cristaleriasantosglasses.com', subject: subject, html: html };
+      var configs = [
+        { host: 'mail.cristaleriasantosglasses.com', port: 465, secure: true },
+        { host: 'mail.cristaleriasantosglasses.com', port: 587, secure: false }
+      ];
+      for (var i = 0; i < configs.length; i++) {
+        try {
+          var t = nodemailer.createTransport({
+            host: configs[i].host,
+            port: configs[i].port,
+            secure: configs[i].secure,
+            auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
+            tls: { rejectUnauthorized: false },
+            connectionTimeout: 10000
+          });
+          await t.sendMail(mailOpts);
+          console.log('Email actualización enviado (puerto ' + configs[i].port + ')');
+          return;
+        } catch(e) { console.log('Email falló puerto ' + configs[i].port + ': ' + e.message); }
+      }
+      console.log('Todos los intentos de email fallaron');
     });
   } catch(e) {
     console.log('Error actualizar cliente:', e.message);
