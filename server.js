@@ -148,6 +148,15 @@ app.post('/api/actualizar-cliente', async (req, res) => {
         console.log('Email falló también puerto 465: ' + e2.message);
       }
     }
+    // Notificar vía ntfy.sh
+    try {
+      var n = require('https');
+      var nMsg = JSON.stringify({topic:'santosglasses-act',message:'✏️ '+(data.presupuesto||'-')+' - '+(data.nombre||'-')+' actualizó sus datos\nDir: '+(data.direccion||'-')+'\nLoc: '+(data.localidad||'-')+' '+data.cp+' '+data.provincia+'\nTel: '+(data.telefono||'-')+'\nEmail: '+(data.email||'-'),title:'Cliente actualizado',tags:['memo'],priority:4});
+      var nReq = n.request({hostname:'ntfy.sh',path:'/',method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(nMsg)}});
+      nReq.write(nMsg);
+      nReq.end();
+      console.log('ntfy.sh notificado');
+    } catch(e) { console.log('ntfy error:', e.message); }
   } catch(e) {
     console.log('Error actualizar cliente:', e.message);
     if (!res.headersSent) res.status(500).json({ error: e.message });
