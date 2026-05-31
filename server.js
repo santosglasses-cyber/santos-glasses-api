@@ -98,7 +98,26 @@ app.post('/api/actualizar-cliente', async (req, res) => {
       return res.status(400).json({ error: 'Faltan datos' });
     }
     console.log('Actualizar cliente:', data.presupuesto, data.nombre);
-    res.json({ success: true, message: 'Datos recibidos' });
+    res.json({ success: true, message: 'Datos recibidos', data: data });
+    // Notificar a Paco via Telegram
+    setImmediate(() => {
+      const TELEGRAM_TOKEN = '8027730556:AAGLC1ARyfqMogbDYp6n5IT_Tq-YaHq3oDk';
+      const CHAT_ID = '1291982313';
+      const https = require('https');
+      const msg = '✏️ DATOS CLIENTE ACTUALIZADOS\nPresupuesto: ' + (data.presupuesto||'-') + '\nNombre: ' + (data.nombre||'-') + '\nDirección: ' + (data.direccion||'-') + '\nTeléfono: ' + (data.telefono||'-') + '\nEmail: ' + (data.email||'-');
+      try {
+        const postData = JSON.stringify({ chat_id: CHAT_ID, text: msg });
+        const opt = {
+          hostname: 'api.telegram.org',
+          path: '/bot' + TELEGRAM_TOKEN + '/sendMessage',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+        };
+        const r = https.request(opt);
+        r.write(postData);
+        r.end();
+      } catch(e) { console.log('Telegram notify error:', e.message); }
+    });
     // Enviar email a admin con los cambios
     setImmediate(() => {
       try {
