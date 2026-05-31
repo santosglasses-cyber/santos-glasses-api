@@ -21,11 +21,47 @@ app.post('/api/firmar', async (req, res) => {
 
     console.log('Firma:', data.presupuesto, data.cliente);
     
-    // Responder AL INSTANTE
-    res.json({ success: true, message: 'Firma recibida' });
+    var esc = function(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+    var html = '<div style="font-family:Arial;max-width:600px;margin:auto;"><div style="background:#008c78;padding:15px;text-align:center;"><h2 style="color:white;margin:0;">SANTOS GLASSES</h2></div><div style="border:1px solid #ddd;padding:20px;"><h3>Presupuesto aceptado</h3><table style="width:100%;font-size:13px;"><tr><td style="font-weight:bold;padding:4px;">Ref:</td><td>'+esc(data.presupuesto)+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Cliente:</td><td>'+esc(data.cliente)+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Email:</td><td>'+esc(data.email||'-')+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Fecha:</td><td>'+esc(data.fecha||(new Date().toLocaleDateString('es-ES')))+'</td></tr><tr><td style="font-weight:bold;padding:4px;">Código:</td><td style="font-size:18px;color:#008c78;letter-spacing:2px;">'+esc(data.codigo||'-')+'</td></tr></table><hr><p style="font-size:11px;color:#aaa;">Santos Glasses - C/ Concordia 11 posterior, 28931 Mostoles - Tlf: 646 469 788</p></div></div>';
     
-    // Intentar enviar en segundo plano
-    setImmediate(() => enviar(data));
+    // Enviar email SINCRONICAMENTE antes de responder
+    var emailOk = false;
+    try {
+      var t = nodemailer.createTransport({
+        host: 'mail.cristaleriasantosglasses.com', port: 587, secure: false,
+        auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
+        tls: { rejectUnauthorized: false }, connectionTimeout: 10000
+      });
+      await t.sendMail({
+        from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>',
+        to: 'admin@cristaleriasantosglasses.com',
+        subject: 'FIRMADO: ' + data.presupuesto + ' - ' + data.cliente,
+        html: html
+      });
+      console.log('Email firma enviado OK');
+      emailOk = true;
+    } catch(e) { console.log('Email firma falló SMTP:', e.message); }
+    
+    if (!emailOk) {
+      // Segundo intento con puerto 465
+      try {
+        var t2 = nodemailer.createTransport({
+          host: 'mail.cristaleriasantosglasses.com', port: 465, secure: true,
+          auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
+          tls: { rejectUnauthorized: false }, connectionTimeout: 10000
+        });
+        await t2.sendMail({
+          from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>',
+          to: 'admin@cristaleriasantosglasses.com',
+          subject: 'FIRMADO: ' + data.presupuesto + ' - ' + data.cliente,
+          html: html
+        });
+        emailOk = true;
+      } catch(e2) { console.log('Email firma falló 465:', e2.message); }
+    }
+    
+    // Responder
+    res.json({ success: true, message: emailOk ? 'Firma recibida y notificada' : 'Firma recibida' });
   } catch(e) {
     console.log('Error:', e.message);
     if (!res.headersSent) res.status(500).json({ error: e.message });
@@ -33,35 +69,6 @@ app.post('/api/firmar', async (req, res) => {
 });
 
 async function enviar(d) {
-  // Intento 1: Proxy local (HTTP)
-  try {
-    await fetch('http://76.13.36.216:33500/api/enviar', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(d),
-      signal: AbortSignal.timeout(10000)
-    });
-    console.log('Proxy OK');
-    return;
-  } catch(e) {
-    console.log('Proxy fallo:', e.message);
-  }
-
-  // Intento 2: SMTP directo (por si acaso)
-  try {
-    const t = nodemailer.createTransport({
-      host: 'mail.cristaleriasantosglasses.com',
-      port: 465,
-      secure: true,
-      auth: { user: 'admin@cristaleriasantosglasses.com', pass: '1@j?@%177@G1' },
-      tls: { rejectUnauthorized: false },
-      connectionTimeout: 15000
-    });
-    
-    await t.sendMail({
-      from: '"Santos Glasses" <admin@cristaleriasantosglasses.com>',
-      to: 'admin@cristaleriasantosglasses.com',
-      subject: 'FIRMADO: ' + d.presupuesto + ' - ' + d.cliente,
       html: buildAdmin(d)
     });
     
